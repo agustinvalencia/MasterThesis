@@ -1,0 +1,118 @@
+
+\documentclass[msc,lith,english,hidelinks]{liuthesis}
+
+%% Settings go in settings.tex
+\include{settings}
+\usepackage{rotating}
+\usepackage{color, soul}
+\usepackage{acro}
+\usepackage{longtable} 
+%\usepackage[bookmarksnumbered=true]{hyperref}
+\usepackage{bookmark}% http://ctan.org/pkg/bookmark
+\bookmarksetup{depth=3}
+\usepackage{float}
+\usepackage[skip=0cm,list=true]{subcaption}
+\usepackage{listings}
+%\usepackage{background}
+%\usepackage{todonotes}
+\usepackage{mathtools}
+\usepackage{amsthm}
+\usepackage{bm}
+\usepackage{fontspec}
+\setmonofont{Consolas}[Scale=0.85]
+
+\newtheorem{definition}{Definition}[section]
+\theoremstyle{remark}
+\newtheorem{property}{Property}
+
+\setcounter{secnumdepth}{4}
+
+\usepackage{enumitem}
+\setlist{noitemsep} % or \setlist{noitemsep} to leave space around whole list
+
+\department{Institutionen för datavetenskap}
+\departmentenglish{Department of Computer and Information Science}
+\departmentshort{IDA}
+
+\titleenglish{Reduction of Power Supply Units Hardware Alarms in Radio Base Stations using Machine Learning}
+% \subtitleenglish{}
+\titleswedish{}
+\thesissubject{Statistics and Machine Learning}
+\publicationyear{2021}
+\currentyearthesisnumber{001}
+\dateofpublication{2021-06-06}
+
+\author{Agustín Valencia González}
+\supervisor{Sanjiv Dwivedi}
+\examiner{Oleg Sysoev}
+\externalsupervisor{Oleg Gorbatov, Lackis Eleftheriadis}
+\dedication{To Ana María.}
+
+%% Watermark setup
+%\backgroundsetup{
+%	contents=DRAFT,
+%	color=gray!30,
+%	scale=15
+%}
+
+%% Code styling
+\lstset
+{ %Formatting for code in appendix
+	xleftmargin=1cm,
+	numbers=left,
+	breaklines=true,
+	breakatwhitespace=false,
+	frame=single,
+	basicstyle=\ttfamily,
+}
+
+%% Glossary setup
+%% Manual : http://ctan.math.washington.edu/tex-archive/macros/latex/contrib/acro/acro-manual.pdf
+\input{sections/glossary}
+
+\acsetup {
+ make-links = true,
+ index/use = true, 
+ list/template = longtable,
+ list/display = all,
+ pages/display = first,
+ pages/seq/use = true,
+ pages/fill = \acrodotfill,
+ pages/name = true
+}
+
+
+%\setuptodonotes{
+%	tickmarkheight=0.3cm,
+%	color=green!40
+%}
+\setcounter{secnumdepth}{4}
+
+\begin{document}
+
+
+\chapterstyle{VZ43}
+
+% Reset the acronym counts since the abstract already counts some
+\acresetall
+
+\include{sections/intro}
+\include{sections/data_analysis}
+\include{sections/theory}
+%\include{sections/data_imputation}
+%\include{sections/forecasting}
+%\include{sections/powerheadroom}
+\include{sections/method}
+\include{sections/results}
+\include{sections/discussion}
+\include{sections/conclusion}
+
+\appendix
+\addtocontents{toc}{\protect\setcounter{tocdepth}{0}}
+\include{sections/Appendix-Further-results}
+
+\printbibliography
+\pagebreak[2]
+\end{document}
+
+

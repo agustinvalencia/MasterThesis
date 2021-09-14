@@ -1,0 +1,15 @@
+\acp{rbs} are one of the most important elements of mobile communication networks, and \acp{psu} are the components that feed them with energy. Thus, by transitivity, \acp{psu} are vital for radio networks. Any malfunctioning in them could be critical and need to be adequately addressed, which might imply high operational costs. 
+
+This work aims to set the ground for improving the mechanisms of how the \acp{rbs} report their \acp{psu} hardware faults to the \ac{noc}, so they are notified only when the operational continuity is at risk.
+
+A state-of-the-art study has been made regarding power consumption modelling and forecasting in \acp{rbs} and other domains, finding that \emph{Prophet}, a \ac{gam} developed by Facebook, shows promising forecasting capabilities in power demand research in non-telecommunication domains.
+
+At the first stage, time series analysis techniques are applied to preprocess the data to construct a database with uncorrupted information by estimating the process that produced them and, if there is missing data in any of the features, impute them by running a Kalman smoother.  Later, these models are also used to forecast the future samples to set a baseline performance. 
+
+Secondly, the future power consumption is estimated using the \emph{Prophet} model and is analysed and explained how \emph{Prophet} had been conceived to work, how it learns, and how it can be used in an actual application through an example from data of a \acp{rbs}. Its performance is compared against the baselines.
+
+Then, the power consumption is translated into Power Headroom terms, which is the feature of interest for communications engineers. An initial alarm criterion is then derived from the critical operational conditions definition. 
+
+Finally, the methods are thoroughly tested by running experiments for a set of \acp{rbs} resulting in a more substantial and general overview of the performance of the proposed solution. This show that \emph{Prophet} achieves an $R^2$ score of 0.86 in the testing set for an hourly-long-range prediction of three days.
+
+

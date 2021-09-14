@@ -1,0 +1,764 @@
+
+\chapter{Theory}
+\label{cha:theory}
+
+\section{Data imputation and database construction}
+
+
+In general, when measuring any variable and collecting data there is always a risk of missing some data samples. Examples can be people not answering some questions in surveys or incomplete medical records, or even public entities failing to report data or choosing not to disclose it. Sampling data from sensors and reporting it via wireless communication channels is not invulnerable to this type of issues. There can be unforeseen technical issues such as a car crash damaging some units, power blackouts, or even a misconfiguration done by a negligent engineer.
+
+Therefore, handling missing data is a problem that has been under research for a long time. Multiple Imputation \cite{imputationRubin}, Expectation-Maximization \cite{imputationEM}, Nearest Neighbours \cite{imputationNN} and hot-deck \cite{imputationHotDeck} are the most popular techniques to deal with them.
+
+In the following sections, it is going to be exposed how it is possible to obtain approximations of the processes that produce a given time series, and how these approximations can be used to \emph{fill the gaps} of missing data through imputation processes.
+
+%As in the previous step, and based on time constraints, it has been decided not to implement algorithms from scratch but rely on existing known packages to avoid investing in developing time. 
+%
+%Moritz et al. have analysed several univariate time series imputation implementations in R \cite{MoritzComparison}, which results later have been compiled in the \texttt{imputeTS} R package \cite{imputeTS}. Therefore, it is reasonable to rely on their work and use their results to decide which imputing strategy should be taken. 
+%Thus, for the current work, the \texttt{imputeTS} package will estimate a structural time series model from the data and then perform the Kalman smoothing to fill the gaps. 
+%
+%It should be noted that before performing the Kalman smoothing, it is needed to have a state representation of the model, for which \texttt{imputeTS} supports Auto-ARIMA state-space estimation and structural time series model fitted by maximum likelihood. In addition, it should be mentioned that the development has been mainly done in python. Nonetheless, for this phase, an R package will be called from Python using the \texttt{rpy2} module as an interface to bounce between both languages.
+
+
+\subsection{Notation}
+
+In the following sections, mathematical notations will be used from time series analysis. In order to stand on common ground,  notations are defined and their meaning explained.
+
+\subsubsection*{Backshift operator}
+
+The \emph{backshift} ($B$) or \emph{lag} ($L$) operators refer to the same operation and both can be found in the literature with no different meaning. In the current work it will , let us define \ref{eq:backshift_def}
+
+\begin{definition}[Backshift operator]
+	\label{eq:backshift_def}
+	Let $B$ denote a backshift or a lag operation in a given series $\{Y_t\} = \{Y_1, Y_2, \ldots, Y_n\}$ such that $ t,n \in \mathbb{N}, t \leq n$ as 
+	
+	\begin{equation}
+		B Y_t = Y_{t-1}, \quad t>1
+	\end{equation}
+\end{definition}
+
+\begin{property}[Inverse Backshift]
+	\label{eq:inv_bs_op}
+	The inverse operation of a lag it is a forward step, thus
+	\begin{equation}
+		B^{-1}Y_t = Y_{t+1}
+	\end{equation}
+\end{property}
+
+\begin{property}
+	The backshift exponentiation introduced in Property \ref{eq:inv_bs_op} can be generalised to denote back/forward shifts in multiple steps as	
+	\begin{equation}
+		B^{k}Y_t = Y_{t-k}
+	\end{equation}
+\end{property}
+
+
+\begin{property}[Backshift algebra]
+	$B$ is a linear operator. Therefore the following is always true.
+	
+	\begin{align}
+		B(aX_t + bY_t + c) &= aBX_t + bBY_t + c \\
+		B^jB^k Y_t &= B^{j+k}Y_t
+	\end{align}
+\end{property}
+
+\begin{property}[Backshift polynomials]
+	
+	The backshift operations can be treated as polynomials to explain more complex expressions.
+	
+	Let $\{Y_t\} = \{Y_1, Y_2, \ldots, Y_n\}$ be a random process and $\bm{\alpha} = (\alpha_1, \alpha_2, \ldots, \alpha_n)$ such that.
+
+	
+	\begin{equation}
+		\label{eq:bs_poly}
+\begin{split}
+		\alpha_{t-1} Y_{t-1} + \alpha_{t-2} Y_{t-2} + \ldots + \alpha_{t-k} Y_{t-k} &=\alpha_{t-1} BY_{t} + \alpha_{t-2} B^2Y_{t} + \ldots + \alpha_{t-k} B^kY_{t} \\
+		&=(\alpha_{t-1}B + \alpha_{t-2}B^2 + \ldots + \alpha_{t-k}B^k) \{Y_{t}\}\\
+		&=\alpha(B)\{Y_{t}\}
+\end{split}
+	\end{equation}
+	 
+The reduction in (\ref{eq:bs_poly}) shows the power of the backshift operator, allowing to reduce such large expression into a short and elegant one. Nonetheless, a common flaw in this notation that could create confusion is that it is not needed to specify the polynomial order ($k$ in the example). It can be assumed that whenever the order is not specified is then a general expression for any $k$-th order polynomial. Nonetheless, whenever its specification is needed, such as to specify an AR or MA model order, a subscript to the notation can be added: $\alpha_k(B)$ in this example.    
+	 
+\end{property}
+
+\subsubsection*{Difference operator}
+
+It is also used the (backward) difference operator used in finite difference calculus to simplify long differences expressions. 
+
+\begin{definition}[Difference operator]
+	Let $\nabla$ denote the difference operator in a given series $\{Y_t\} = \{Y_1, Y_2, \ldots, Y_n\}$ such that $ t,n \in \mathbb{N}, t \leq n$ as 
+	
+	\begin{equation}
+		\nabla Y_t = Y_t - Y_{t-1}, \quad t>1
+	\end{equation}
+\end{definition}
+
+\begin{property}[Difference and backshift operators relation]
+	As an operation between lagged values, it is possible to define $\nabla$ in terms of $B$
+	
+	\begin{align}
+		\begin{split}
+			\nabla Y_t 	&= Y_t - Y_{t-1} \\
+			\nabla Y_t	&= Y_t - BY_t \\
+			\nabla Y_t	&= (1-B)Y_t
+		\end{split}
+	\end{align}
+\end{property}
+
+\begin{property}[High order differences]
+	Let us obtain the second-order difference as	
+	
+	\begin{align}
+		\label{eq:2nd_nabla}
+		\begin{split}
+			\nabla (\nabla Y_t)	&= \nabla Y_t - \nabla Y_{t-1} \\
+			\nabla^2 Y_t		&= \nabla Y_t - \nabla B Y_{t} \\
+			\nabla^2 Y_t		&= (1-B) \nabla Y_{t} \\
+			\nabla^2 Y_t		&= (1-B)(1-B) Y_{t} \\
+			\nabla^2 Y_t		&= (1-B)^2 Y_{t} \\
+		\end{split}
+	\end{align}
+
+	It can be shown that the development in (\ref{eq:2nd_nabla}) can be extended to the $d$-th order difference operator having that
+	
+	\begin{equation}
+		\nabla^d Y_t = (1-B)^d Y_t
+	\end{equation} 
+\end{property}
+
+
+
+\subsection{ARIMA models}
+
+It is defined that a time series $\{X_t\}$ can be modelled by an \emph{integrated autoregressive moving average} (ARIMA) model if there exist a $d$-th difference $\{Y_t\} = \nabla^d \{X_t\}$ that can be modelled as an ARMA model \cite{brockwell2016introduction}. 
+
+Expanding the definition 
+
+\begin{align}\label{eq1}
+	\begin{split}
+		\{Y_t\} &= \nabla^d \{X_t\}, \quad d>0 \\
+		&= (1-B)\nabla^{d-1}\{X_t\} \\
+		& \quad\quad \vdots \\
+		&= (1-B)^{d-1}\nabla\{X_t\} \\
+		&= (1-B)^d \{X_t\} 
+	\end{split}
+\end{align}
+
+Therefore, $(1-B)^d \{X_t\}$ will be explained by an $\text{ARMA}(p,q)$ model if the following recursive equation has a causal and stationary solution:
+
+\begin{equation*}
+	Y_t - \phi_1Y_{t-1} - \cdots - \phi_pY_{t-p} = Z_t + \theta_1Z_{t-1} + \cdots + \theta_qZ_{t-q}
+\end{equation*}
+
+Where $\{Z_t\}$ is an uncorrelated noise sequence and $\phi_i$ and $\theta_j$ are the autoregressive and moving-average weights, respectively. Written using backshift operator:
+
+\begin{align}\label{eq2}
+	\phi(B)\{Y_t\} &= \theta(B) Z_t \quad,\quad Z_t \sim \mathcal{N}(0,\sigma^2)
+\end{align}
+
+Replacing \ref{eq1} in \ref{eq2} the $\text{ARIMA}(p,d,q)$ process that explains $\{X_t\}$ can be defined as:
+
+\begin{align}\label{eq:arima}
+	\phi(B)(1-B)^d \{X_t\} &= \theta(B) Z_t
+\end{align}
+
+Where $p$ is the $p$-order of the AR($p$) process, $q$ the $q$-order of the MA($q$) process and $d$ the successive differencing steps until obtaining a stationary ARMA($p,q$) process.
+
+\subsection{SARIMA}
+
+It is said that a time series has a seasonality of period $s$ if $Y_t = Y_{t-s}$. Written using the backshift operator this is $Y_t = B^sY_t$.
+
+Using the same logical development than for ARIMA derivation, it can be said that $\{Y_t\}$ follows a Seasonal ARIMA (SARIMA) process with period $s$ \cite{brockwell2016introduction} :
+
+\begin{equation*}
+	\{Y_t\} \sim \text{ARIMA}(p,d,q)(P,D,Q)_s
+\end{equation*}
+
+If and only if (\ref{eq3}) is a causal ARMA process defined by (\ref{eq4}).
+
+\begin{equation}\label{eq3}
+	\{X_t\} = (1-B)^d (1-B^s)^D \{Y_t\}
+\end{equation}
+
+\begin{equation}\label{eq4}
+	\phi(B)\Phi(B^s)X_t = \theta(B)\Theta(B^s)Z_t , \quad\{Z_t\} \sim \mathcal{N}(0,\sigma^2)
+\end{equation}
+
+Therefore, replacing (\ref{eq3}) in (\ref{eq4}), the SARIMA definition can be rewritten as
+
+\begin{equation*}\label{eq5}
+	\phi(B)\Phi(B^s)(1-B)^d (1-B^s)^D \{Y_t\} = \theta(B)\Theta(B^s)Z_t , \quad\{Z_t\} \sim \mathcal{N}(0,\sigma^2)
+\end{equation*}
+
+Most of the literature obviate a constant $c$ as part of the model since it does not add more insight about the concepts around these derivations. Nonetheless, as it will be seen in the following section it is considered as part of the auto-ARIMA estimation, therefore, the final ARIMA definition in this work is given by:
+
+\begin{equation}\label{eq:sarima}
+	\phi(B)\Phi(B^s)(1-B)^d (1-B^s)^D \{Y_t\} = c + \theta(B)\Theta(B^s)Z_t , \quad\{Z_t\} \sim \mathcal{N}(0,\sigma^2)
+\end{equation}
+
+Where $p, d$ and $q$ refer to the AR, integral and MA parameters of the ARIMA model, respectively. $P, D$ and $Q$ are the AR, integral and MA parameters of the seasonal construction for the period $s$.
+
+
+
+
+
+
+\subsection{State space representation}
+
+A state-space representation of a time series is suitable for cases in which the underlying nature of a process is hidden and cannot be determined. Nonetheless,  indirect observations can be measured.
+
+Thus, state-space representations are given by two equations. The \emph{observation equation} (\ref{eq:obs}) relates $w$-dimensional observable measures as a linear function of the $v$-dimensional noisy hidden state, and the \emph{state equation} (\ref{eq:state}) determines how the hidden state will transition from time $t$ to $t+1$.
+
+\begin{align}
+	\bm{Y}_t		&=	G\bm{X}_t + \bm{W}_t  \label{eq:obs} \\
+	\bm{X}_{t+1}	&=	F\bm{X}_t + \bm{V}_t \label{eq:state} 
+\end{align}
+
+Where $F$ is a $v \times v$ matrix, $G$ a $w \times v$ matrix, $\{\bm{W}_t\} \sim \mathcal{N}(0,R)$, $\{\bm{V}_t\} \sim \mathcal{N}(0,Q)$ and $E(\bm{V}_s\bm{W}^T_t) = 0$ for all $t, s$.
+
+\subsection{Structural models}
+
+The classical structural models are defined in terms of trend $(m)$, seasonal $(s)$ and noise $(\varepsilon)$ components (\ref{eq:struct}). Although useful for some applications, they can be too deterministic for some others.
+
+\begin{equation}\label{eq:struct}
+	X_t = m_t + s_t + \varepsilon_t
+\end{equation}
+
+State-space representations allow bringing more flexibility to these components. Therefore, it is natural to extend these concepts to a state-space domain. 
+
+\subsubsection{Local level model}
+
+To show how the model is built up, it will be derived by adding component by component from the most straightforward model: the random walk. Let $\{Y_t\}$ be the observable variable from a state-space (\ref{eq:loclvl_obs}) in which the hidden state corresponds is a random variable (\ref{eq:loclvl_st}), which in fact will determine the \emph{local level model} \cite{brockwell2016introduction}.
+
+\begin{align}
+	Y_t		&= M_t + W_t, \quad W_t \sim \mathcal{N}(0,\sigma^2_w) \label{eq:loclvl_obs} \\
+	M_{t+1}	&= M_t + Vt, \quad V_t \sim \mathcal{N}(0,\sigma^2_v) \label{eq:loclvl_st}
+\end{align}
+
+\subsubsection{Local linear trend model}
+
+It is not difficult to extend this local level model to a \emph{local linear trend model} by adding a slope state $B_t$. 
+
+\begin{equation}
+	M_t = M_{t-1} + B_{t-1} + V_{t-1} \label{eq:loclintrend}
+\end{equation}
+
+Introducing randomness into the slope also:
+
+\begin{equation}
+	B_t = B_{t-1} + U_t , \quad  U_t \sim \mathcal{N}(0,\sigma^2_u) \label{eq:randslope}
+\end{equation} 
+
+As now this model contains multiple state, in order to write the model in state-space form, it can be defined the state vector:
+
+\begin{equation}
+	\bm{X}_t = (M_t, B_t)^T \label{eq:statevect}
+\end{equation}
+
+Thus, using (\ref{eq:statevect}), (\ref{eq:loclintrend}) and (\ref{eq:randslope}) can be rewritten as
+
+\begin{equation}
+	\bm{X}_{t+1} = 
+	\begin{bmatrix}
+		1 & 1 \\
+		0 & 1 
+	\end{bmatrix} \bm{X}_{t+1} + \bm{V}_{t}, \quad t = 1, 2, \ldots
+	\label{eq:lintrendstates}
+\end{equation}
+
+Such that 
+\begin{equation}\label{eq:V_trend}
+	\bm{V}_{t} = (V_t, U_t)^T
+\end{equation}
+
+The observation equation for the process $\{Y_t\}$ is then by
+
+\begin{equation}\label{eq:lintrendobs}
+	Y_t = \begin{bmatrix}1 & 0\end{bmatrix}\bm{X}_{t} + W_t
+\end{equation}
+
+Thus, from (\ref{eq:lintrendstates}) and (\ref{eq:lintrendobs}) the missing pieces to define the state-space equations are:
+
+\begin{equation}\label{eq:F_trend}
+	F = \begin{bmatrix}
+		1 & 1 \\
+		0 & 1 
+	\end{bmatrix}
+\end{equation}
+
+\begin{equation}
+	G = \begin{bmatrix}1 & 0\end{bmatrix}
+\end{equation} 
+
+\begin{equation}
+	Q = \begin{bmatrix}
+		\sigma^2_v 	& 0 \\
+		0 			& \sigma^2_u 
+	\end{bmatrix}
+\end{equation}
+
+\begin{equation}
+	R = \sigma^2_w
+\end{equation}
+
+\subsubsection{Noisy seasonal model}
+
+Same as the classical structural models, the seasonal component $s_t$ with period $d$ has the properties \cite{maravall1985structural}
+
+\begin{align*}
+	s_{t+d} &= s_t \\
+	\sum_{t=1}^{d}{s_t} &= 0
+\end{align*}
+
+Expanding it as in \cite{brockwell2016introduction} it is obtained that:
+
+\begin{equation}\label{eq:noiseasonal}
+	s_{t+1} = -s_t - \cdots - s_{t-d+2}, \quad t=1,2,\ldots
+\end{equation}
+
+From (\ref{eq:noiseasonal}) a generalised sequence $\{Y_t\}$ it can be constructed by adding a random variable $S_t \sim \mathcal{N}(0, \sigma^2_s)$
+
+\begin{equation}
+	Y_{t+1} = -Y_t - \cdots - Y_{t-d+2} + S_t, \quad t=1,2,\ldots
+\end{equation} 
+
+Now, to put it into a state-space form, the state vector is defined:
+
+\begin{equation}
+	\bm{X} = (Y_t, Y_{t-1}, \ldots, Y_{t-d+2})^T
+\end{equation}
+
+Therefore the observation equation for $\{Y_t\}$
+
+\begin{equation}
+	Y_t = \begin{bmatrix}1 & 0 & 0 & \cdots & 0\end{bmatrix} \bm{X}, \quad t=1,2,\ldots
+\end{equation}
+
+$\{\bm{X}\}$ in the state equation
+
+\begin{align}
+	\bm{X}_{t+1} &= F\bm{X}_t + \bm{V}_t , \quad t=1,2,\dots\\
+	\bm{V}_t &= (S_t, 0, \ldots, 0)^T \label{eq:V_noise} \\
+	F &= 
+	\begin{bmatrix}
+		-1		& -1		& \cdots	& -1		& -1 		\\
+		1		&  0 		& \cdots 	&  0		& 0  		\\
+		0		&  1 		& \cdots 	&  0		& 0  		\\
+		\vdots	& \vdots	& \ddots	& \vdots	& \vdots	\\
+		0		&  0		& \cdots 	&  1		& 0		
+	\end{bmatrix}\label{eq:F_noise}
+\end{align}
+
+
+
+\subsubsection{Structural time series general model}
+
+As in (\ref{eq:struct}), to construct a general (additive) structural time series model, it is needed to sum each of the components, i.e., the general model is built as a result of merging the linear trend and the noisy seasonal models.
+
+The state vector is then:
+
+\begin{equation}
+	\bm{X}_t = 
+	\begin{bmatrix}
+		\bm{X}_t^1 \\
+		\bm{X}_t^2
+	\end{bmatrix} =
+	\begin{bmatrix}
+		(M_t, B_t)^T \\
+		(Y_t, Y_{t-1}, \ldots, Y_{t-d+2})^T
+	\end{bmatrix} = 
+	\begin{bmatrix}
+		\begin{bmatrix}
+			M_t \\
+			B_t
+		\end{bmatrix} \\
+		\begin{bmatrix}
+			Y_t \\
+			Y_{t-1} \\
+			\vdots \\
+			Y_{t-d+2}
+		\end{bmatrix}
+	\end{bmatrix}
+\end{equation}
+
+The state equation
+
+\begin{align}
+	\bm{X}_{t+1}	&= 
+	\begin{bmatrix}
+		F_1	& 0 \\
+		0	& F2
+	\end{bmatrix} \bm{X}_{t} +
+	\begin{bmatrix}
+		\bm{V}_t^1 \\
+		\bm{V}_t^2
+	\end{bmatrix}
+\end{align}
+
+Where $F_1$ and $F_2$ are the matrices defined in (\ref{eq:F_trend}) and (\ref{eq:F_noise}) respectively. $\bm{V}_t^1$ and $\bm{V}_t^2$ are (\ref{eq:V_trend}) and (\ref{eq:V_noise}).
+
+
+And the observations equation:
+
+\begin{equation}
+	Y_t = 	\begin{bmatrix}1 & 0 & 1 & 0 & \cdots & 0\end{bmatrix}\bm{X}_{t} + W_t
+\end{equation}
+
+
+
+\subsection{Kalman prediction}
+
+Let $\bm{X} = (X_1, \ldots, X_v)^T$ be a random vector. Then it can be defined 
+
+\begin{equation}
+	P_t(\bm{X}) \coloneqq (P_t(X_1), \ldots, P_t(X_v))^T
+\end{equation}
+
+Such that 
+
+\begin{equation}
+	P_t(X_i) \coloneqq P(X_i | Y_0, \ldots, Y_t)
+\end{equation}
+
+Is the best linear predictor of $X_i$ in terms of all components of $Y_0, Y_1, \ldots, Y_t$ \cite{brockwell2016introduction}
+
+
+Then the Kalman one-step predictor for a state-space model given by (\ref{eq:obs}) and (\ref{eq:state}) is defined as 
+
+\begin{equation}
+	\hat{\bm{X}} \coloneqq P_{t-1}(\bm{X}_t)
+\end{equation}
+
+And their error covariance matrices:
+
+\begin{equation}
+	\Omega_t = E[(\bm{X}_t - \hat{\bm{X}}_t)(\bm{X}_t - \hat{\bm{X}}_t)^T]
+\end{equation}
+
+The Kalman predictive recursions are then defined by
+
+Initial conditions:
+\begin{align}\label{eq:kalm_pred_init}
+	\begin{split}
+		\hat{\bm{X}}_1 &= P(\bm{X}_1 | \bm{Y}_0) \\
+		\Omega_1 &= E[(\bm{X}_1 - \hat{\bm{X}}_1)(\bm{X}_1 - \hat{\bm{X}}_1)^T]
+	\end{split}
+\end{align}
+
+Recursions:
+\begin{align}\label{eq:kalm_pred_1}
+	\begin{split}
+		\hat{\bm{X}}_{t+1} &= F_t\hat{\bm{X}}_t + \Theta_t\Delta_t^{-1}(\hat{\bm{Y}}_t - G_t\hat{\bm{X}}_t) \\
+		\Omega_{t+1} &= F_t \Omega_t F_t^T + Q_t - \Theta_t \Delta_t^{-1} \Theta_t^T 
+	\end{split}
+\end{align}
+
+Where,
+\begin{align}\label{eq:kalm_pred_2}
+	\begin{split}
+		\Delta_t &= G_t \Omega_t G_t^T + R_t \\
+		\Theta_t &= F_t \Omega_t G_t^T
+	\end{split}
+\end{align}
+
+\subsection{Structural models estimation}
+
+Consider a vector $\bm{\theta}$ whose components can fully parametrise the state space given by (\ref{eq:obs}) and (\ref{eq:state}).
+
+Therefore, it is possible to find $\bm{\hat{\bm{\theta}}}_{MLE}$ by maximising the observations in $\{Y_t\}$ with respect to the parameters in $\bm{\theta}$.
+
+If the conditional probability density of $\bm{Y}_t | \bm{Y}_{t-1}, \ldots, \bm{Y}_0$ is $f(\cdot | \bm{Y}_{t-1}, \ldots, \bm{Y}_0)$, then the likelihood can be expressed as 
+
+\begin{equation}\label{eq:structts_lik_1}
+	\mathcal{L}(\bm{\theta} ; \bm{Y}_1, \ldots, \bm{Y}_n) = \prod_{t=1}^{n}{f(\bm{Y}_t | \bm{Y}_{t-1}, \ldots, \bm{Y}_0)}
+\end{equation}
+
+In general (\ref{eq:structts_lik_1}) is hard to solve. But, if it is assumed that $\bm{Y}_0$ , $\bm{X}_1$ and $\bm{W}_t$, $\bm{V}_t, t=1,2,\ldots$ are \emph{jointly Gaussian}, then the resulting conditional densities will have the form \cite{brockwell2016introduction}
+
+\begin{equation}
+	f(\cdot | \bm{Y}_{t-1}, \ldots, \bm{Y}_0) =  \left(2 \pi\right)^{-w/2} \left(\det \Delta_t\right)^{-1/2} \exp \left\{-\frac{1}{2} \bm{I}_t^T \Delta_t^{-1}\bm{I}_t\right\}
+\end{equation}
+
+Where 
+
+\begin{equation}
+	\bm{I}_t = \bm{Y}_t - P_{t-1} \bm{Y}_t = \bm{Y}_t - G \hat{\bm{X}}_t
+\end{equation}
+
+And $P_{t-1} \bm{Y}_t$ and $\Delta_t, t \geq 1$ are obtained from the Kalman prediction recursions.
+
+Finally, under the Gaussian assumptions, the likelihood can be rewritten as \cite{brockwell2016introduction}
+
+\begin{equation}\label{eq:structts_lik_2}
+	\mathcal{L}(\bm{\theta} ; \bm{Y}_1, \ldots, \bm{Y}_n) =
+	\left(2 \pi\right)^{-\frac{nw}{2}} 
+	\left( \prod_{j=1}^{n}{\det \Delta_j} \right)^{-\frac{1}{2}}
+	\exp\left\{ - \frac{1}{2} \sum_{j=1}^{n}{\bm{I}_t^T \Delta_t^{-1}\bm{I}_t} \right\}
+\end{equation} 
+
+Now, for any value of $\bm{\theta}$, the likelihood values $\mathcal{L}(\bm{\theta} ; \bm{Y}_1, \ldots, \bm{Y}_n)$ can be calculated using the help of Kalman recursions. Thus, in order to find $\hat{\bm{\theta}}_{MLE}$ it is needed to run some non-linear optimisation algorithm to find the best $\bm{\theta}$ by maximising $\mathcal{L}$\footnote{Constrained to the optimisation algorithm behaviour}. %\textcolor{red}{(This fits more in methods) In the current work it is used the L-BFGS-B algorithm via \texttt{optim} calls in R}.
+
+\subsection{Kalman smoothing}
+
+A time series smoothing consists in the estimation of the hidden states $\bm{X}_t$ given the complete time series $\bm{Y}_1, \ldots, \bm{Y}_n$ such that $t > n$ \cite{timeseries_statespace_models}. Which is especially suitable when there is any missing data point at a time $t < n$, this is:
+
+\begin{equation}
+	\bm{X}_{t|n} = P_n \bm{X}_t
+\end{equation}
+
+An the error covariance matrices \cite{brockwell2016introduction}
+
+\begin{equation}
+	\Omega_{t|n} = E \left[(\bm{X}_{t} - \bm{X}_{t|n})(\bm{X}_{t} - \bm{X}_{t|n})^T \right]
+\end{equation}
+
+Then, the Kalman iterations for the smoothing problem are \cite{brockwell2016introduction}
+
+\begin{align}
+	P_n \bm{X}_t	
+	&= 
+	P_{n-1} \bm{X}_t + \Omega_{t,n} G_n^T \Delta_n^{-1} (\bm{Y}_n - G_n \hat{\bm{X}}_n) 
+	\\
+	\Omega_{t,n+1} 		
+	&=
+	\Omega_{t,n} \left[ F_n `\Theta_n \Delta_n^{-1} G_n \right]^T
+	\\
+	\Omega_{t|n}
+	&=
+	\Omega_{t|n-1} - \Omega_{t,n} G_n^T \Delta_n^{-1} G_n \Omega_{t,n}^T
+\end{align}
+
+Given the initial conditions in (\ref{eq:kalman_smoot_init_cond}), which are obtained from the Kalman prediction.
+
+\begin{align}
+	\label{eq:kalman_smoot_init_cond}
+	\hat{\bm{X}}_t &= P_{t-1} \bm{X}_t \\
+	\Omega_{t,t} &= \Omega_{t|t-1} = \Omega_t
+\end{align}
+
+
+
+
+
+
+
+
+
+%% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Forecasting
+
+
+\section{Prophet forecasting model}
+\label{cha:forecasting}
+
+Prophet is a statistical model developed by engineers at Facebook, which mainly fits its models in Stan \cite{carpenter2017stan} and has been open-sourced with public \acp{api} for python and R languages \cite{fb_prophet}. It takes a regression-fitting approach to learn the time series and then forecasts by extrapolating such models and adding uncertainty in a Bayesian framework.
+
+It uses a decomposable time series model \cite{harvey1990estimation} with three main components: trend, seasonality and holidays:
+
+\begin{equation}
+	\label{eq:prophet_def}
+	y(t) = g(t) + s(t) + h(t) + \varepsilon_t
+\end{equation}
+
+Where $g(t)$ is a trend function that models non-periodic fluctuations, $s(t)$ capture different kinds of seasonalities, and $h(t)$ represents special situations that could add irregularities to the other components and a random error term $\varepsilon$.
+
+The model is built as a \ac{gam} \cite{hastie1987generalized}, which allows adding more and more components as needed, this extension is going to be further explained in Section \ref{sec:mv_prophet}. The seasonalities are modelled by an exponential smoothing approach \cite{gardner1985exponential}.
+
+\subsection{Trend model}
+
+Prophet has two trend models: a saturating growth one, which is similar to model population growths in ecosystems  \cite{hutchinson1978introduction} and a piecewise model to give the flexibility of trend changes in determined learnt changepoints \cite{fb_prophet}.
+
+The basic saturated growth model is given by
+
+\begin{align}\label{eq:sat_growth}
+	g(t) &= \frac{C}{1 + \exp\left\{ -k(t-m) \right\}}
+\end{align}
+
+\begin{equation*}
+	\text{Where} \quad
+	C: \text{Carrying capacity}, \quad
+	k: \text{Growth rate}, \quad
+	m: \text{Offset parameter}
+\end{equation*}
+
+Nonetheless, the saturated growth model in (\ref{eq:sat_growth}) does not meet all the usual requirements for some of the applications in which the saturating ceiling varies over time or in which the growth rate is not constant. Therefore, the authors have extended the model as follows.
+
+Let $s_j=1,\ldots, S$ be the number of changepoints where the growth rate is allowed to change. Then, let $\delta_j$ be the change rate that happens at $s_j$, and $\bm{\delta} \in \mathbb{R}^s$ the vector defined by all $\delta_j$. The growth rate at any time $t$ is then the base rate $k$ plus all the adjustments up to $t$.
+
+\begin{equation}
+	\label{eq:proph_trend_1}
+	k + \sum_{j=1}^{t < s_j}{\delta_j}
+\end{equation}
+
+Expression (\ref{eq:proph_trend_1}) can be rewritten as:
+
+\begin{align}
+	\begin{split}
+		k &+ \bm{a}(t)^T\bm{\delta} \\
+		\text{Where}\quad a_j &= 
+		\begin{cases*}
+			1\quad,\quad\text{if} \quad t > s_j \\
+			0\quad,\quad\text{otherwise}
+		\end{cases*}
+	\end{split}
+\end{align}
+
+Also, when the growth rate is adjusted, the $m$ needs to be adjusted to ensure continuity. 
+
+\begin{equation}
+	\gamma_j = \left( s_j - m - \sum_{l<j}{\gamma_l} \right) \left(1 - \frac{k+\sum_{l<j}{\delta_l}}{k+\sum_{l \leq j}{\delta_l}} \right)
+\end{equation}
+
+Then the linear trend with changepoints is defined by (\ref{eq:piece_trend}) piecewise logistic growth model by (\ref{eq:piece_satgrowth}) \cite{fb_prophet}.
+
+\begin{equation}\label{eq:piece_trend}
+	g(t) = \left( k + \bm{a}(t)^T \bm{\delta} \right)t + \left( m + \bm{a}(t)^T \bm{\gamma} \right)
+\end{equation}
+
+\begin{equation}\label{eq:piece_satgrowth}
+	g(t) = \frac{C(t)}
+	{1 + \exp\left\{-(k+\bm{a}(t)^T\bm{\delta})(t-(m+\bm{a}(t)^T \bm{\gamma}))\right\}
+	}
+\end{equation}
+
+
+\subsection{Trend forecast}
+
+
+After the model has learnt from a history of $T$ time points with $S$ changepoints from which each point has a rate change $\delta_j \sim \text{Laplace}(0,\tau)$. 
+
+The trend will keep its last growth rate constant. The forecasts will be made by extrapolating the \ac{gam} and simulating samples from Laplace$(0,\lambda)$ where $\lambda$ is a variance inferred from the data from the maximum likelihood estimate of the rate scale parameter (\ref{eq:lambda_inferr}).
+
+\begin{equation}\label{eq:lambda_inferr}
+	\lambda = \frac{1}{2} \sum_{j=1}^{S}{|\delta_j|}
+\end{equation}
+
+Once $\lambda$ has been inferred, the trend forecast and its uncertainty are obtained from
+
+\begin{equation}\label{eq:trend_forecast}
+	\forall j > T\quad,\quad 
+	\begin{cases}
+		\delta_j = 0 \quad \text{w.p.} \frac{T-S}{S} \\
+		\delta_j \sim \text{Laplace}(0,\lambda) \quad \text{w.p.} \frac{S}{T}
+	\end{cases}
+\end{equation}
+
+
+\subsection{Multivariate Model}
+\label{sec:mv_prophet}
+
+As mentioned in Section \ref{cha:forecasting}, one of the strengths of using \acp{gam} is their flexibility provided by its property of including as many additive components as needed. Although Prophet's authors do not mention the extension of adding external regressors in their original publication \cite{fb_prophet}, it is documented in their \ac{api} and more in depth research has been done in their source code to obtain the following models.
+
+In the current work it is going to be understood as \emph{multivariate Prophet model} a Prophet model that has included external regressors in its learning process. This external regressors can be included in two different modes: as an additive component $x_a(t)$ or as a multiplicative factor to the trend model $x_m(t)$, each are scaled by a corresponding factor $\chi_a$ and $\chi_m$, respectively\footnote{As this model is not part of the original publication, the nomenclature cannot considered standard when working with Prophet models}.
+
+In (\ref{eq:prophet_def_mv}) is expressed the general multivariate model including $N_a$ additive external regressors and $N_m$ multiplicative external regressors.
+
+\begin{equation}
+	\label{eq:prophet_def_mv}
+	y(t) = g(t) \bigg\{ 1 + \sum_{i=1}^{N_m}{\chi_{m_i} x_{m_i}(t)} \bigg\} + \sum_{i=1}^{N_a}{\chi_{a_i} x_{a_i}(t)} + s(t) + h(t) + \varepsilon_t
+\end{equation}
+
+Where $\chi_i = b \cdot B$ , $B \sim \mathcal{N}(0,1)$ and $b \in \mathbb{R}, b > 0$ where $b$ can be used as a regularization factor.
+
+
+\subsection{Seasonalities}
+
+By using the \ac{gam} flexibility, it is possible to add different seasonality periods. 365.25 or 7, for yearly and weekly seasonalities, respectively, --in days measurements-- for example. These seasonalities are modelled by the use of Fourier series \cite{harvey_fourier}.
+
+Therefore, for every given period $P$, it can be defined that.
+
+\begin{equation}
+	s(t) = \sum_{n=1}^{N}\left( a_n \cos\left( \frac{2 \pi n t}{P}\right)  + b_n \sin\left( \frac{2 \pi n t}{P}\right) \right)
+\end{equation}
+
+Which has $2N$ params to learn:
+
+\begin{equation*}
+	\bm{\beta} = \left[ a_1, b_1, a_2, b_2, \ldots, a_N, b_N\right]^T
+\end{equation*}
+
+In order to make the structures more manageable, a matrix of seasonalities is defined comprised of the seasonal vectors for each time step.
+
+\begin{equation}
+	\bm{X}(t) = \left[ \cos\left( \frac{2 \pi (1) t}{P}\right), \sin\left( \frac{2 \pi (1) t}{P}\right), \dots , \cos\left( \frac{2 \pi (N) t}{P}\right), \sin\left( \frac{2 \pi (N) t}{P}\right)  \right]
+\end{equation}
+
+Thus, the seasonal component is expressed then as.
+
+\begin{align}
+	s(t) &= \bm{X}(t) \bm{\beta} \\
+	\text{Where} \quad \beta &\sim \mathcal{N}(0, \sigma^2)
+\end{align}
+
+
+\subsection{Holidays and festivities}
+
+Prophet also allows considering non-seasonal events that can significantly affect the forecasts due to changes in peoples behaviour. Namely, Muslim Ramadan, Chinese New Year or the US's Super Bowl.
+
+It is assumed that each holiday is independent. For each holiday $i$, $D_i$ is the set of past and future dates of it. 
+
+Like seasonalities, a regressors matrix is generated indicating whether the time $t$ happens during holiday $i$ and a parameter $\kappa_i$ to model its influence in the forecast.
+
+\begin{align}
+	Z(t) &=  \left[   \bm{1}(t \in D_1), \ldots, \bm{1}(t \in D_L) \right] \\
+	\therefore \quad h(t) &= Z(t)\bm{\kappa} \\
+	\bm{\kappa} &\sim \mathcal{N}(0,\nu^2)
+\end{align}
+
+For practical cases, importing the holidays' dates can be done using the python-holidays open-source package  \cite{Holidays}. It is possible also to include other parameters to extend the holiday component to the neighbouring days. For more details, the reader can further investigate in \cite{fb_prophet}.
+
+%\begin{table}[H]
+%	\centering
+%	\begin{tabular}{|c|c|}
+%		\hline
+%		\textbf{Date} & \textbf{Holiday} \\
+%		\hline
+%		2021-01-01 &Nyårsdagen \\
+%		2021-01-06 &Trettondedag jul \\
+%		2021-04-02 &Långfredagen \\
+%		2021-04-04 &Påskdagen, Söndag \\
+%		2021-04-05 &Annandag påsk \\
+%		2021-05-01 &Första maj \\
+%		2021-05-13 &Kristi himmelsfärdsdag \\
+%		2021-05-23 &Pingstdagen, Söndag \\
+%		2021-06-06 &Sveriges nationaldag, Söndag \\
+%		2021-06-25 &Midsommarafton \\
+%		2021-06-26 &Midsommardagen \\
+%		2021-11-06 &Alla helgons dag \\
+%		2021-12-24 &Julafton \\
+%		2021-12-25 &Juldagen \\
+%		2021-12-26 &Annandag jul, Söndag \\
+%		2021-12-31 &Nyårsafton \\
+%		\hline
+%	\end{tabular}
+%	\caption{Results for Swedish holidays in 2021 from \texttt{python-holidays}}
+%	\label{table:sv_holidays}
+%\end{table}
+
+%\subsection{External regressors}
+
+
+
+\subsection{Hamiltonian Monte Carlo and Prophet fitting}
+
+As mentioned, Prophet's core has been implemented in Stan \cite{carpenter2017stan}. As a consequence, the R and python \acp{api} work only as intermediaries between the application code and Stan's model definition. 
+
+Stan, as a Bayesian framework, uses \ac{mcmc} algorithms to sample from the defined distributions: \ac{hmc} \cite{betancourt2018conceptual} and its adaptive variation \ac{nuts} \cite{hoffman2014no}. These approaches resemble the Hamiltonian mechanics, which describes the evolution of a system over time, its position $q$ and momentum $p$, as the partial derivatives of the Hamiltonian function $\mathcal{H}(q,p)$ with respect to the other parameter, i.e., the derivative of the Hamiltonian with respect to the position results in the derivative of the momentum with respect to the time and the same in the opposite sense as defined in (\ref{eq:hamilton}).
+
+\begin{align}
+	\label{eq:hamilton}
+	-\frac{\partial\mathcal{H}}{\partial q} &= \frac{dp_i}{dt} \\
+	\frac{\partial\mathcal{H}}{\partial p} &= \frac{dq_i}{dt}
+\end{align}
+
+Where 
+
+\begin{equation}
+	\mathcal{H}(q,p) = U(q) + K(p) 
+\end{equation}
+
+
+With $U(q)$ the potential energy which is defined to be the negative log-probability density of the distribution for $q$ desired to be sampled (sometimes denoted as $\theta$ in Bayesian literature), and $K(p)$ the negative log-probability density of multi-normal $\mathcal{N}(0,\Sigma)$ \cite{neal2011mcmc}.
+
+The \ac{hmc} iterations consist of two steps. In the first step, samples for the momentum variables are drawn from their multi-normal distribution. In the second step, Leapfrog numerical integration \cite{cuendet2007calculation} is used to solve the Hamiltonian equations, to run later a Metropolis-Hastings accept/reject step to propose a new state of the system.
+
+It should be noted that for maximum a posteriori estimation, it is used Limited-memory-Broyden–Fletcher–Goldfarb–Shanno algorithm (L-BFGS) optimisation method \cite{fletcher1987}. L-BFGS is an iterative method for solving unconstrained nonlinear optimisation problems using a limited amount of computer memory.

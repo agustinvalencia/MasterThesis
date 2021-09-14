@@ -1,0 +1,29 @@
+\chapter{Conclusion}
+\label{cha:conclusion}
+
+Different techniques to manage univariate time series from sparse file sources and synchronise them in just one multivariate time series data structure has been explored and evaluated. For this case, if they would be merged using an inner join approach, it would affect the length of the series since only the intersections would be included. Even more, if there was any missing sample, it could violate the constant sampling time assumption. Hence, using an outer join approach was more reasonable. 
+
+Nonetheless, by using an outer join to merge the time series, NaN values were introduced, making the selected model fail. Consequently, it was decided to impute the data by using Kalman smoothing from model approximations. These were obtained from structural time series estimation using maximum likelihood estimation or a SARIMA auto fitting based on the algorithm in \cite{autoarimaLib}. It was observed that when simulating \ac{mcar} from complete data and then comparing the estimates, structural time series modelling tends to approximate better and behave more stable than auto-ARIMA models.
+
+Since the only tested forecasting model, other than the baselines, with conclusive results, has been the Prophet model, there are no rooted proofs for concluding that it is, in fact, the most suitable model for this application. Nonetheless, it still shows the ability to accurately estimate future power consumption in a long-rage horizon.
+
+A real-time formula to compute the power headroom has been analytically derived. Considering that the power reductions are not continuous but quantised, it has been concluded that the power headroom cannot be less than the most significant \ac{psu} power contribution. Furthermore, this conclusion has been extended for $n$ consecutive worst-case scenarios, and the $n$-level safety criterion has been proposed.
+
+\chapter{Future work}
+\label{cha:future-work}
+
+Imputing the data was not initially considered as part of the project. However, after running into issues with the Prophet model due to NaN values, it had to be decided between two options. First, the prediction model could have been changed for another that could handle missing data, or on the other hand, the merged time series could have been processed to fill the gaps so Prophet would not fail. The latter option was chosen, leaving the former unexplored due to time constraints. Future work could research that direction and evaluate how much improvement is obtained from imputing the data and conclude whether this non-informed decision was correct or not. 
+
+It will also be interesting to research multivariate time series imputation techniques and replace the several independent univariate imputations done in this work, overtaking the naive --and known wrong-- assumption of independence between the features. In the same stage, the multivariate processes estimations should not be discarded since they can be reused to forecast power consumption.
+
+Further research must explore other forecasting alternatives, such as the mentioned XGBoost regressor with promising inconclusive results or RNN or Transformers,  and the new architectures that mix the Prophet model with other layers, to mention some. 
+
+The proposed alarm criteria have been analytically derived. Although it works to set a reasonable threshold, it still relies on an expert to tune its value. In order to fully automate the new predictive alarm system, it is also needed to apply an optimisation technique to find the best alarm criterion. 
+
+When it comes to evaluating an eventual deployment of the service, the current approach requires data collection over time from the actual \acp{rbs} since it has been conceived as \textit{ad-hoc} solutions, which might not be the ideal solution at all. 
+
+The initial conceptualisation of this work was to train a fault predictor, so the installed power capacity was the most critical variable to predict. Unfortunately, after mining more than a thousand \acp{rbs} data, only six suspicions faults were found, forcing the change in the approach from events prediction to power demand forecasting, assuming the power capacity as a constant. The final solution must withdraw this assumption and change the $P_{max}$ value to another forecast $P_{max}(t)$ being evaluated by fault predictors. 
+
+During the research, it has been noted that, in appearance, there is no unique pattern preceding a \ac{psu} fault. Thus, if the final goal is to pre-train some models to be deployed without collecting data on-site, these suspected failure modes must be studied. It has been proposed to cluster the fault modes and investigate the possibilities to treat them as if they were the same \ac{rbs} allowing to deploy pre-trained models depending on the \ac{rbs} class.
+
+
