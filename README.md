@@ -2,7 +2,9 @@
 
 Public repository for the thesis work I developed at Ericsson Research for my Statistics and Machine Learning master thesis during January-June 2021. 
 
-The figure below sumarises the overall pipeline implemented. Do not hesitate on writing at `agustin.valencia [at] ericsson [dot] com`
+The figure below sumarises the overall pipeline implemented. 
+
+For questions and further research, do not hesitate on writing at `agustin.valencia@ericsson.com`
 
 ![overall pipeline](figures/pipeline_v4.png)
 
